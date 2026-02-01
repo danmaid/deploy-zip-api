@@ -1,0 +1,171 @@
+openapi: 3.0.3
+info:
+  title: Deploy ZIP API
+  version: 1.1.0
+  description: |
+    ZIPベースの簡易デプロイAPI。
+
+    - POST /content: ZIPを受け取り /var/www/html をatomic差し替え
+    - GET /content: 現行をZIPで返却
+    - GET /archive: 履歴一覧
+    - GET /archive/{id}: 履歴をZIPで返却
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+  /docs:
+    get:
+      summary: API docs (markdown)
+      responses:
+        '200':
+          description: Markdown
+          content:
+            text/markdown:
+              schema:
+                type: string
+  /openapi.yaml:
+    get:
+      summary: OpenAPI spec (YAML)
+      responses:
+        '200':
+          description: YAML
+          content:
+            text/yaml:
+              schema:
+                type: string
+  /openapi.json:
+    get:
+      summary: OpenAPI spec (JSON)
+      responses:
+        '200':
+          description: JSON
+          content:
+            application/json:
+              schema:
+                type: object
+  /content:
+    get:
+      summary: Download current content as ZIP
+      responses:
+        '200':
+          description: ZIP archive stream
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+    post:
+      summary: Upload ZIP and atomically replace HTML_DIR
+      requestBody:
+        required: true
+        content:
+          application/zip:
+            schema:
+              type: string
+              format: binary
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Deployed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeployResult'
+        '400':
+          description: Bad request / invalid zip
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /archive:
+    get:
+      summary: List archived deployments
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchiveList'
+  /archive/{id}:
+    get:
+      summary: Download an archived deployment as ZIP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ZIP archive stream
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    DeployResult:
+      type: object
+      required: [ok, id, archived, warnings]
+      properties:
+        ok:
+          type: boolean
+        id:
+          type: string
+        topDir:
+          type: string
+        archived:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+    ArchiveList:
+      type: object
+      required: [ok, archives]
+      properties:
+        ok:
+          type: boolean
+        archives:
+          type: array
+          items:
+            type: object
+            required: [id, mtime]
+            properties:
+              id:
+                type: string
+              mtime:
+                type: string
+                format: date-time
+    Error:
+      type: object
+      required: [ok, error]
+      properties:
+        ok:
+          type: boolean
+        error:
+          type: string
