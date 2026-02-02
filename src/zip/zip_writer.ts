@@ -5,15 +5,9 @@ import zlib from 'node:zlib';
 import { Transform } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { crc32Update } from './crc32.js';
+import { Timing } from '../util/timing.js';
 
-type CdEntry = {
-  name: Buffer;
-  crc32: number;
-  csize: bigint;
-  usize: bigint;
-  lhoff: bigint;
-  mtimeDate: { time: number; date: number };
-};
+type CdEntry = { name: Buffer; crc32: number; csize: bigint; usize: bigint; lhoff: bigint; mtimeDate: { time: number; date: number } };
 
 function dosTimeDate(mtime: Date): { time: number; date: number } {
   const d = mtime;
@@ -71,64 +65,64 @@ async function* walkFiles(rootDir: string): AsyncGenerator<{ abs: string; rel: s
   }
 }
 
-export async function streamZipOfDirectory(opts: {
-  dir: string;
+export async function collectFiles(dir: string, timing?: Timing) {
+  const files: Array<{ abs: string; rel: string; st: fs.Stats }> = [];
+  if (timing) timing.start('walk');
+  for await (const f of walkFiles(dir)) files.push(f);
+  if (timing) timing.end('walk', `files=${files.length}`);
+  return files;
+}
+
+export async function streamZipOfFiles(opts: {
+  files: Array<{ abs: string; rel: string; st: fs.Stats }>;
   out: NodeJS.WritableStream;
   topFolder: string;
   compressionLevel?: number;
-}): Promise<void> {
-  const { dir, out, topFolder } = opts;
+  timing: Timing;
+}): Promise<{ fileCount: number }>{
+  const { files, out, topFolder, timing } = opts;
   const level = opts.compressionLevel ?? 6;
 
   const entries: CdEntry[] = [];
   let offset = 0n;
+  let fileCount = 0;
 
-  for await (const f of walkFiles(dir)) {
+  for (const f of files) {
+    fileCount++;
     const nameStr = `${topFolder}/${f.rel}`.replace(/\\/g, '/');
     const name = Buffer.from(nameStr, 'utf8');
     const { time, date } = dosTimeDate(f.st.mtime);
 
     const lhoff = offset;
+    const extraLocal = zip64ExtraLocalPlaceholders();
 
+    const lfhStart = performance.now();
     const lfh = Buffer.concat([
-      u32(0x04034b50),
-      u16(45),
-      u16(0x0008 | 0x0800),
-      u16(8),
-      u16(time),
-      u16(date),
-      u32(0),
-      u32(0xFFFFFFFF),
-      u32(0xFFFFFFFF),
-      u16(name.length),
-      u16(zip64ExtraLocalPlaceholders().length),
-      name,
-      zip64ExtraLocalPlaceholders()
+      u32(0x04034b50), u16(45), u16(0x0008 | 0x0800), u16(8), u16(time), u16(date),
+      u32(0), u32(0xFFFFFFFF), u32(0xFFFFFFFF), u16(name.length), u16(extraLocal.length),
+      name, extraLocal
     ]);
-
     await writeAll(out, lfh);
+    timing.addMs('lfh', performance.now() - lfhStart);
+
     offset += BigInt(lfh.length);
 
     let crc = 0;
     let usize = 0n;
     let csize = 0n;
 
+    const defStart = performance.now();
+
     const tapU = new Transform({
       transform(chunk: Buffer, _enc, cb) {
-        try {
-          crc = crc32Update(crc, chunk);
-          usize += BigInt(chunk.length);
-          cb(null, chunk);
-        } catch (e: any) { cb(e); }
+        try { crc = crc32Update(crc, chunk); usize += BigInt(chunk.length); cb(null, chunk); }
+        catch (e: any) { cb(e); }
       }
     });
 
     const def = zlib.createDeflateRaw({ level });
     const tapC = new Transform({
-      transform(chunk: Buffer, _enc, cb) {
-        csize += BigInt(chunk.length);
-        cb(null, chunk);
-      }
+      transform(chunk: Buffer, _enc, cb) { csize += BigInt(chunk.length); cb(null, chunk); }
     });
 
     const rs = fs.createReadStream(f.abs);
@@ -136,43 +130,28 @@ export async function streamZipOfDirectory(opts: {
     tapC.pipe(out, { end: false });
     await finished(tapC);
 
-    const dd = Buffer.concat([
-      u32(0x08074b50),
-      u32(crc >>> 0),
-      u64(csize),
-      u64(usize)
-    ]);
+    timing.addMs('deflate', performance.now() - defStart);
+
+    const ddStart = performance.now();
+    const dd = Buffer.concat([u32(0x08074b50), u32(crc >>> 0), u64(csize), u64(usize)]);
     await writeAll(out, dd);
+    timing.addMs('dd', performance.now() - ddStart);
+
     offset += csize + BigInt(dd.length);
 
     entries.push({ name, crc32: crc >>> 0, csize, usize, lhoff, mtimeDate: { time, date } });
   }
 
+  timing.start('cd');
   const cdStart = offset;
   let cdSize = 0n;
 
   for (const e of entries) {
     const extra = zip64ExtraCentral(e.usize, e.csize, e.lhoff);
     const cdh = Buffer.concat([
-      u32(0x02014b50),
-      u16(45),
-      u16(45),
-      u16(0x0008 | 0x0800),
-      u16(8),
-      u16(e.mtimeDate.time),
-      u16(e.mtimeDate.date),
-      u32(e.crc32),
-      u32(0xFFFFFFFF),
-      u32(0xFFFFFFFF),
-      u16(e.name.length),
-      u16(extra.length),
-      u16(0),
-      u16(0),
-      u16(0),
-      u32(0),
-      u32(0xFFFFFFFF),
-      e.name,
-      extra
+      u32(0x02014b50), u16(45), u16(45), u16(0x0008 | 0x0800), u16(8), u16(e.mtimeDate.time), u16(e.mtimeDate.date),
+      u32(e.crc32), u32(0xFFFFFFFF), u32(0xFFFFFFFF), u16(e.name.length), u16(extra.length),
+      u16(0), u16(0), u16(0), u32(0), u32(0xFFFFFFFF), e.name, extra
     ]);
     await writeAll(out, cdh);
     cdSize += BigInt(cdh.length);
@@ -181,38 +160,19 @@ export async function streamZipOfDirectory(opts: {
 
   const zip64EocdOff = offset;
   const zip64Eocd = Buffer.concat([
-    u32(0x06064b50),
-    u64(44n),
-    u16(45),
-    u16(45),
-    u32(0),
-    u32(0),
-    u64(BigInt(entries.length)),
-    u64(BigInt(entries.length)),
-    u64(cdSize),
-    u64(cdStart)
+    u32(0x06064b50), u64(44n), u16(45), u16(45), u32(0), u32(0),
+    u64(BigInt(entries.length)), u64(BigInt(entries.length)), u64(cdSize), u64(cdStart)
   ]);
   await writeAll(out, zip64Eocd);
   offset += BigInt(zip64Eocd.length);
 
-  const loc = Buffer.concat([
-    u32(0x07064b50),
-    u32(0),
-    u64(zip64EocdOff),
-    u32(1)
-  ]);
+  const loc = Buffer.concat([u32(0x07064b50), u32(0), u64(zip64EocdOff), u32(1)]);
   await writeAll(out, loc);
   offset += BigInt(loc.length);
 
-  const eocd = Buffer.concat([
-    u32(0x06054b50),
-    u16(0),
-    u16(0),
-    u16(0xFFFF),
-    u16(0xFFFF),
-    u32(0xFFFFFFFF),
-    u32(0xFFFFFFFF),
-    u16(0)
-  ]);
+  const eocd = Buffer.concat([u32(0x06054b50), u16(0), u16(0), u16(0xFFFF), u16(0xFFFF), u32(0xFFFFFFFF), u32(0xFFFFFFFF), u16(0)]);
   await writeAll(out, eocd);
+
+  timing.end('cd', `entries=${entries.length}`);
+  return { fileCount };
 }

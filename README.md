@@ -1,53 +1,21 @@
-# deploy-zip-api
+# deploy-zip-api (Header-only pipeline summary) v1.8.4
 
-Node.js + TypeScript（実行時依存ゼロ）で動く、ZIPベースの簡易デプロイAPIです。
+## Fix: responsive without global scaling
+Previously the SVG used a large minimum viewBox width, causing the whole drawing (including text) to shrink when the window became narrow.
 
-- `POST /content` : SharePoint等の「フォルダ一括DL」ZIPを受け取り、`/var/www/html` を atomic に差し替えます。
-  - 置換前のディレクトリは `/var/www/archive/<id>/` として展開済みのまま保管します。
-  - 受信中に `deflate+DD` のエントリはストリーミングで展開しつつCRC/サイズを検証します。
-  - `STORE+DD` などストリーミングで境界確定できないものは、受信後に Central Directory を読み、spool からフォールバック展開します。
-- `GET /content` : `/var/www/html` を ZIP（DD付き、Zip64対応）としてストリーミング返却します。
-- `GET /archive` : `/var/www/archive` の履歴ディレクトリ一覧を返却します。
-- `GET /archive/:id` : `/var/www/archive/:id` を ZIP としてストリーミング返却します。
+v1.8.4 switches to **pixel-1:1 rendering**:
+- The SVG `viewBox` matches the rendered pixel width.
+- If the pipeline needs more width than available, the SVG expands horizontally and the pipeline area becomes scrollable (no scaling).
+- `preserveAspectRatio` is set to `xMinYMin meet` (no distortion).
 
-> 注意: 認証はありません。既存APIサーバ側で必ず制御してください。
+## Arrow cleanup
+- `net -> tee` spacing tuned.
+- `tee -> spool` rendered as a straight vertical drop.
 
-## Setup
+## Spool usage visualization
+- Removed direct `spool -> CD` line.
+- When `spool_read` exists: `CD` drops vertically to a marker on the spool lane and the used segment on the lifetime line is highlighted.
 
-```bash
-npm i
-npm run build
-PORT=8080 npm start
-```
-
-## API Docs
-
-- `docs/APIDOCS.md`
-- `openapi.yaml` / `openapi.json`
-- `examples/*.sh`
-
-## Environment variables
-
-- `PORT` (default: 8080)
-- `HOST` (default: 0.0.0.0)
-- `HTML_DIR` (default: /var/www/html)
-- `ARCHIVE_DIR` (default: /var/www/archive)
-- `TMP_BASE` (default: /var/www/.tmp-deploy)
-- `ZIP_OUT_ROOT` (default: site)  … GETで返すZIPのトップフォルダ名
-
-Limits（バイト）
-- `MAX_ZIP_BYTES` (default: 1GiB)
-- `MAX_TOTAL_BYTES` (default: 2GiB)
-- `MAX_FILE_BYTES` (default: 512MiB)
-- `MAX_ENTRIES` (default: 20000)
-
-## Built-in doc routes
-
-- `GET /docs` (markdown)
-- `GET /openapi.yaml`
-- `GET /openapi.json`
-
-## Web UI
-
-ブラウザで試す: `http://localhost:8080/ui`（または `/`）
-
+## Total span semantics
+`total` spans `network -> storage` because the server-side `total` measures the request handling end-to-end.
+If you want *processing-only* total, add a new metric (e.g. `proc_total`) and draw a separate span.

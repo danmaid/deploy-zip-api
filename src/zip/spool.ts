@@ -3,11 +3,13 @@ import { PassThrough } from 'node:stream';
 import { createWriteStream } from 'node:fs';
 import { finished } from 'node:stream/promises';
 
+type SpoolStats = { bytes: number; ms: number };
+
 export async function teeToSpool(req: IncomingMessage, spoolPath: string, maxBytes: number) {
   const pass = new PassThrough();
   const ws = createWriteStream(spoolPath, { flags: 'wx' });
-
   let seen = 0;
+  const t0 = process.hrtime.bigint();
 
   req.on('data', (chunk: Buffer) => {
     seen += chunk.length;
@@ -24,31 +26,18 @@ export async function teeToSpool(req: IncomingMessage, spoolPath: string, maxByt
     if (!ok1 || !ok2) {
       req.pause();
       let pending = 0;
-      const resumeIfReady = () => {
-        pending -= 1;
-        if (pending <= 0) req.resume();
-      };
-      if (!ok1) {
-        pending += 1;
-        ws.once('drain', resumeIfReady);
-      }
-      if (!ok2) {
-        pending += 1;
-        pass.once('drain', resumeIfReady);
-      }
+      const resumeIfReady = () => { pending -= 1; if (pending <= 0) req.resume(); };
+      if (!ok1) { pending += 1; ws.once('drain', resumeIfReady); }
+      if (!ok2) { pending += 1; pass.once('drain', resumeIfReady); }
     }
   });
 
-  req.on('end', () => {
-    pass.end();
-    ws.end();
-  });
+  req.on('end', () => { pass.end(); ws.end(); });
+  req.on('error', (e) => { pass.destroy(e); ws.destroy(e); });
 
-  req.on('error', (e) => {
-    pass.destroy(e);
-    ws.destroy(e);
+  const spoolDone = finished(ws).then((): SpoolStats => {
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    return { bytes: seen, ms };
   });
-
-  const spoolDone = finished(ws);
   return { pass, spoolDone };
 }
