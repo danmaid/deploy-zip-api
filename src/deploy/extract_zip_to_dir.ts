@@ -99,67 +99,77 @@ export async function extractZipRequestToDirectory(opts: {
   const warnings: string[] = [];
   let topDir: string | null = null;
 
-  // Streaming phase
-  for (;;) {
-    const hdr = await zr.nextHeader();
-    if (!hdr) break;
+  // Streaming phase — read as much as we can from the stream. If parsing
+  // fails (for example, Unexpected EOF from a ZIP variant), fall back to
+  // extracting everything from the spooled file via the central directory.
+  try {
+    for (;;) {
+      const hdr = await zr.nextHeader();
+      if (!hdr) break;
 
-    entryCount += 1;
-    if (entryCount > limits.maxEntries) throw new Error('Too many entries');
+      entryCount += 1;
+      if (entryCount > limits.maxEntries) throw new Error('Too many entries');
 
-    const name = decodeName(hdr.fileNameBytes, hdr.flags, hdr.extra);
-    const norm = normalizeZipPath(name);
-    if (!norm) continue;
+      const name = decodeName(hdr.fileNameBytes, hdr.flags, hdr.extra);
+      const norm = normalizeZipPath(name);
+      if (!norm) continue;
 
-    if (!topDir) {
-      topDir = getTopDir(norm);
-      if (!topDir) throw new Error('ZIP must contain a top directory');
+      if (!topDir) {
+        topDir = getTopDir(norm);
+        if (!topDir) throw new Error('ZIP must contain a top directory');
+      }
+
+      // directories are optional
+      const rel = stripTopDir(norm, topDir);
+      if (!rel) continue;
+
+      const outPath = safeJoin(stagingDir, rel);
+
+      const usesDD = (hdr.flags & 0x08) !== 0;
+      const zip64Sizes = hdr.compressedSize > 0xFFFFFFFFn || hdr.uncompressedSize > 0xFFFFFFFFn;
+
+      // STORE + DD defer
+      if (usesDD && hdr.method === 0) {
+        warnings.push(`Deferred STORE+DD at offset ${hdr.localHeaderOffset}`);
+        continue;
+      }
+
+      // directory entry
+      if (norm.endsWith('/')) {
+        await mkdirp(outPath);
+        continue;
+      }
+
+      let rawStream: NodeJS.ReadableStream;
+      if (!usesDD) {
+        const src = zr.streamCompressedKnown(hdr.compressedSize);
+        rawStream = hdr.method === 0 ? src : src.pipe(zlib.createInflateRaw());
+      } else {
+        const src = zr.streamCompressedUnknown();
+        rawStream = src.pipe(zlib.createInflateRaw());
+      }
+
+      const r = await writeStreamToFile(rawStream, outPath, limits);
+      totalBytes += r.size;
+      if (totalBytes > limits.maxTotalBytes) throw new Error('Total too large');
+
+      if (!usesDD) {
+        if (hdr.uncompressedSize !== 0n && hdr.uncompressedSize !== BigInt(r.size)) throw new Error('Size mismatch (local header)');
+        if (hdr.crc32 !== 0 && hdr.crc32 !== r.crc32) throw new Error('CRC mismatch (local header)');
+      } else {
+        const dd = await zr.readDataDescriptor(zip64Sizes);
+        if (dd.uncompressedSize !== BigInt(r.size)) throw new Error('Size mismatch (DD)');
+        if (dd.crc32 !== r.crc32) throw new Error('CRC mismatch (DD)');
+      }
+
+      processed.set(hdr.localHeaderOffset.toString(), { size: r.size, crc32: r.crc32 });
     }
-
-    // directories are optional
-    const rel = stripTopDir(norm, topDir);
-    if (!rel) continue;
-
-    const outPath = safeJoin(stagingDir, rel);
-
-    const usesDD = (hdr.flags & 0x08) !== 0;
-    const zip64Sizes = hdr.compressedSize > 0xFFFFFFFFn || hdr.uncompressedSize > 0xFFFFFFFFn;
-
-    // STORE + DD defer
-    if (usesDD && hdr.method === 0) {
-      warnings.push(`Deferred STORE+DD at offset ${hdr.localHeaderOffset}`);
-      continue;
-    }
-
-    // directory entry
-    if (norm.endsWith('/')) {
-      await mkdirp(outPath);
-      continue;
-    }
-
-    let rawStream: NodeJS.ReadableStream;
-    if (!usesDD) {
-      const src = zr.streamCompressedKnown(hdr.compressedSize);
-      rawStream = hdr.method === 0 ? src : src.pipe(zlib.createInflateRaw());
-    } else {
-      const src = zr.streamCompressedUnknown();
-      rawStream = src.pipe(zlib.createInflateRaw());
-    }
-
-    const r = await writeStreamToFile(rawStream, outPath, limits);
-    totalBytes += r.size;
-    if (totalBytes > limits.maxTotalBytes) throw new Error('Total too large');
-
-    if (!usesDD) {
-      if (hdr.uncompressedSize !== 0n && hdr.uncompressedSize !== BigInt(r.size)) throw new Error('Size mismatch (local header)');
-      if (hdr.crc32 !== 0 && hdr.crc32 !== r.crc32) throw new Error('CRC mismatch (local header)');
-    } else {
-      const dd = await zr.readDataDescriptor(zip64Sizes);
-      if (dd.uncompressedSize !== BigInt(r.size)) throw new Error('Size mismatch (DD)');
-      if (dd.crc32 !== r.crc32) throw new Error('CRC mismatch (DD)');
-    }
-
-    processed.set(hdr.localHeaderOffset.toString(), { size: r.size, crc32: r.crc32 });
+  } catch (e: any) {
+    // Don't treat a streaming parse failure as a fatal upload error — we'll
+    // attempt to finish extraction by reading the Central Directory from the
+    // spooled file and performing a fallback extraction for entries that were
+    // not fully processed during streaming.
+    warnings.push(`Streaming parse failed: ${e?.message ?? String(e)}; falling back to central directory`);
   }
 
   await spoolDone;
