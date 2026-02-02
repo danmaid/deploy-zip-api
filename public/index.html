@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Deploy ZIP API – Web UI</title>
-  <link rel="stylesheet" href="/ui/style.css" />
+  <link rel="stylesheet" href="/v1/deploy/ui/style.css" />
 </head>
 <body>
   <header>
@@ -25,7 +25,7 @@
 
     <section class="grid">
       <section class="card">
-        <h2>アップロード（POST /content）</h2>
+        <h2>アップロード（POST /v1/deploy/content）</h2>
         <p>SharePoint の「フォルダ一括ダウンロード」で作った ZIP（トップにフォルダ1つ）を指定してください。</p>
         <input id="file" type="file" accept=".zip,application/zip" />
         <div class="row">
@@ -41,10 +41,10 @@
       <section class="card">
         <h2>ダウンロード（GET）</h2>
         <div class="row">
-          <button id="btnDownloadContent">現行コンテンツをZIPで取得（GET /content）</button>
+          <button id="btnDownloadContent">現行コンテンツをZIPで取得（GET /v1/deploy/content）</button>
         </div>
         <div class="row">
-          <button id="btnRefresh">履歴一覧を更新（GET /archive）</button>
+          <button id="btnRefresh">履歴一覧を更新（GET /v1/deploy/archive）</button>
           <span id="listStatus" class="status"></span>
         </div>
         <div>
@@ -65,10 +65,10 @@
     <section class="card">
       <h2>ドキュメント / OpenAPI</h2>
       <ul>
-        <li><a id="linkDocs" href="/docs" target="_blank" rel="noreferrer">/docs (Markdown)</a></li>
-        <li><a id="linkYaml" href="/openapi.yaml" target="_blank" rel="noreferrer">/openapi.yaml</a></li>
-        <li><a id="linkJson" href="/openapi.json" target="_blank" rel="noreferrer">/openapi.json</a></li>
-        <li><a id="linkHealth" href="/healthz" target="_blank" rel="noreferrer">/healthz</a></li>
+        <li><a id="linkDocs" href="/v1/deploy/docs" target="_blank" rel="noreferrer">/docs (Markdown)</a></li>
+        <li><a id="linkYaml" href="/v1/deploy/openapi.yaml" target="_blank" rel="noreferrer">/openapi.yaml</a></li>
+        <li><a id="linkJson" href="/v1/deploy/openapi.json" target="_blank" rel="noreferrer">/openapi.json</a></li>
+        <li><a id="linkHealth" href="/v1/deploy/healthz" target="_blank" rel="noreferrer">/healthz</a></li>
       </ul>
       <p class="hint">Swagger UI/Redoc を使う場合は、この OpenAPI を読み込んでください。</p>
     </section>
@@ -83,6 +83,6 @@
     <span class="muted">deploy-zip-api</span>
   </footer>
 
-  <script src="/ui/app.js"></script>
+  <script src="/v1/deploy/ui/app.js"></script>
 </body>
 </html>

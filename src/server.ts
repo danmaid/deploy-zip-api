@@ -135,33 +135,33 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     const p = url.pathname;
 
-    if (req.method === 'GET' && p === '/healthz') return sendJson(res, 200, { ok:true });
+    if (req.method === 'GET' && p === '/v1/deploy/healthz') return sendJson(res, 200, { ok:true });
 
-    if (req.method === 'GET' && p === '/openapi.yaml') {
+    if (req.method === 'GET' && p === '/v1/deploy/openapi.yaml') {
       return await serveStaticFile(res, path.join(process.cwd(), 'openapi.yaml'), 'text/yaml; charset=utf-8');
     }
-    if (req.method === 'GET' && p === '/openapi.json') {
+    if (req.method === 'GET' && p === '/v1/deploy/openapi.json') {
       return await serveStaticFile(res, path.join(process.cwd(), 'openapi.json'), 'application/json; charset=utf-8');
     }
 
 
 // Web UI (static)
-if (req.method === 'GET' && (p === '/' || p === '/ui' || p === '/ui/')) {
+if (req.method === 'GET' && (p === '/v1/deploy/' || p === '/v1/deploy/ui' || p === '/v1/deploy/ui/')) {
   return await serveStaticFile(res, path.join(process.cwd(), 'public', 'index.html'), 'text/html; charset=utf-8');
 }
-if (req.method === 'GET' && p === '/ui/app.js') {
+if (req.method === 'GET' && p === '/v1/deploy/ui/app.js') {
   return await serveStaticFile(res, path.join(process.cwd(), 'public', 'app.js'), 'application/javascript; charset=utf-8');
 }
-if (req.method === 'GET' && p === '/ui/style.css') {
+if (req.method === 'GET' && p === '/v1/deploy/ui/style.css') {
   return await serveStaticFile(res, path.join(process.cwd(), 'public', 'style.css'), 'text/css; charset=utf-8');
 }
 
-    if (req.method === 'GET' && p === '/content') return await handleGetContent(req, res);
-    if (req.method === 'POST' && p === '/content') return await handlePostContent(req, res);
+    if (req.method === 'GET' && p === '/v1/deploy/content') return await handleGetContent(req, res);
+    if (req.method === 'POST' && p === '/v1/deploy/content') return await handlePostContent(req, res);
 
-    if (req.method === 'GET' && p === '/archive') return await handleGetArchiveList(req, res);
-    if (req.method === 'GET' && p.startsWith('/archive/')) {
-      const id = decodeURIComponent(p.slice('/archive/'.length));
+    if (req.method === 'GET' && p === '/v1/deploy/archive') return await handleGetArchiveList(req, res);
+    if (req.method === 'GET' && p.startsWith('/v1/deploy/archive/')) {
+      const id = decodeURIComponent(p.slice('/v1/deploy/archive/'.length));
       return await handleGetArchive(req, res, id);
     }
 
@@ -177,5 +177,5 @@ server.listen(PORT, HOST, () => {
   console.log(`HTML_DIR=${HTML_DIR}`);
   console.log(`ARCHIVE_DIR=${ARCHIVE_DIR}`);
   console.log(`TMP_BASE=${TMP_BASE}`);
-  console.log(`Docs: http://${HOST}:${PORT}/docs`);
+  console.log(`Docs: http://${HOST}:${PORT}/v1/deploy/docs`);
 });

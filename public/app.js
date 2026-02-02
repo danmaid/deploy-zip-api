@@ -1,23 +1,22 @@
 // Patch: download via fetch (visible in DevTools Network) without opening new window.
-(function(){
+(function () {
   const $ = (id) => document.getElementById(id);
   const logEl = $('log');
   const baseUrlEl = $('baseUrl');
 
-  function now(){ return new Date().toISOString(); }
-  function log(msg){
+  function now() { return new Date().toISOString(); }
+  function log(msg) {
     logEl.textContent += `[${now()}] ${msg}
 `;
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  function origin(){ return window.location.origin; }
-  function getBase(){
-    const v = baseUrlEl.value.trim();
-    return v ? v.replace(/\/$/, '') : origin();
+  function origin() { return window.location.origin; }
+  function getBase() {
+    return '/v1/deploy';
   }
 
-  function setCurlSamples(){
+  function setCurlSamples() {
     const b = getBase();
     $('curlUpload').textContent = `curl -L -X POST --data-binary @sharepoint.zip ${b}/content`;
     $('curlDownload').textContent = [
@@ -32,11 +31,11 @@
     $('linkHealth').href = `${b}/healthz`;
   }
 
-  async function downloadViaFetch(url, filename){
+  async function downloadViaFetch(url, filename) {
     log(`FETCH download: ${url}`);
     const res = await fetch(url, { method: 'GET' });
     if (!res.ok) {
-      const t = await res.text().catch(()=> '');
+      const t = await res.text().catch(() => '');
       throw new Error(`HTTP ${res.status}: ${t}`);
     }
     const blob = await res.blob();
@@ -74,27 +73,27 @@
     const status = $('listStatus');
     status.textContent = 'loading...';
     status.className = 'status';
-    try{
+    try {
       const url = `${getBase()}/archive`;
       log(`GET ${url}`);
-      const res = await fetch(url, { method:'GET' });
+      const res = await fetch(url, { method: 'GET' });
       const txt = await res.text();
-      if(!res.ok) throw new Error(`HTTP ${res.status}: ${txt}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${txt}`);
       const data = JSON.parse(txt);
       renderArchiveRows(data.archives || []);
-      status.textContent = `ok (${(data.archives||[]).length})`;
+      status.textContent = `ok (${(data.archives || []).length})`;
       status.classList.add('ok');
-    }catch(e){
+    } catch (e) {
       status.textContent = String(e);
       status.classList.add('bad');
       log(`ERROR: ${e}`);
     }
   });
 
-  function renderArchiveRows(archives){
+  function renderArchiveRows(archives) {
     const tbody = $('archiveRows');
     tbody.innerHTML = '';
-    for(const a of archives){
+    for (const a of archives) {
       const tr = document.createElement('tr');
       const tdId = document.createElement('td');
       tdId.textContent = a.id;
@@ -127,13 +126,13 @@
     status.textContent = '';
     status.className = 'status';
 
-    if(!f){
+    if (!f) {
       status.textContent = 'ZIPファイルを選択してください';
       status.classList.add('bad');
       return;
     }
 
-    try{
+    try {
       const url = `${getBase()}/content`;
       status.textContent = 'uploading...';
       log(`POST ${url} (${f.name}, ${f.size} bytes)`);
@@ -145,7 +144,7 @@
       });
 
       const txt = await res.text();
-      if(!res.ok) throw new Error(`HTTP ${res.status}: ${txt}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${txt}`);
       const data = JSON.parse(txt);
       status.textContent = `ok: id=${data.id}`;
       status.classList.add('ok');
@@ -153,7 +152,7 @@
 
       $('btnRefresh').click();
 
-    }catch(e){
+    } catch (e) {
       status.textContent = String(e);
       status.classList.add('bad');
       log(`ERROR: ${e}`);
