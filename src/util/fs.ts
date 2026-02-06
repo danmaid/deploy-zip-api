@@ -19,7 +19,12 @@ export function safeJoin(root: string, rel: string): string {
 }
 
 export async function mkdirp(dir: string) {
-  await fsp.mkdir(dir, { recursive: true });
+  try {
+    await fsp.mkdir(dir, { recursive: true });
+  } catch (e: any) {
+    // Ignore EEXIST errors — directory already exists
+    if (e?.code !== 'EEXIST') throw e;
+  }
 }
 
 export function isSafeName(name: string): boolean {
