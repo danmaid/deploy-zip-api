@@ -20,6 +20,21 @@ npm run build
 PORT=8080 npm start
 ```
 
+## Testing
+
+Edge cases and error handling scenarios are covered by automated tests:
+
+```bash
+npm test              # Run tests in watch mode
+npm run test -- --run # Run tests once and exit
+```
+
+The test suite covers:
+- File system edge cases (EEXIST, ENOTDIR errors)
+- Directory creation with multiple concurrent calls
+- File/directory name collisions in ZIP archives
+- Safe path joining and validation
+
 ## API Docs
 
 - `docs/APIDOCS.md`
