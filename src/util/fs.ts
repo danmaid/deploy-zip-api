@@ -22,8 +22,34 @@ export async function mkdirp(dir: string) {
   try {
     await fsp.mkdir(dir, { recursive: true });
   } catch (e: any) {
-    // Ignore EEXIST errors — directory already exists
-    if (e?.code !== 'EEXIST') throw e;
+    if (e?.code === 'EEXIST') {
+      // Directory already exists
+      return;
+    }
+    if (e?.code === 'ENOTDIR') {
+      // A file exists in the path where we need a directory
+      // Check each component of the path and remove files if necessary
+      const parts = dir.split(path.sep);
+      let currentPath = parts[0] === '' ? '/' : parts[0];
+      
+      for (let i = 1; i < parts.length; i++) {
+        try {
+          const stat = await fsp.stat(currentPath);
+          if (!stat.isDirectory()) {
+            // It's a file, remove it
+            await fsp.rm(currentPath, { force: true });
+          }
+        } catch (statErr: any) {
+          if (statErr?.code !== 'ENOENT') throw statErr;
+        }
+        currentPath = path.join(currentPath, parts[i]);
+      }
+      
+      // Now try to create the directory again
+      await fsp.mkdir(dir, { recursive: true });
+      return;
+    }
+    throw e;
   }
 }
 

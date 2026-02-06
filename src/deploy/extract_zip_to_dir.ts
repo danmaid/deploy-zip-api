@@ -24,6 +24,19 @@ export type UploadLimits = {
 
 async function writeStreamToFile(rawStream: NodeJS.ReadableStream, outPath: string, limits: UploadLimits): Promise<{ size: number; crc32: number }> {
   await mkdirp(dirname(outPath));
+  
+  // Remove any existing file or directory at the target path
+  try {
+    const stat = await fsp.stat(outPath);
+    if (stat.isDirectory()) {
+      await fsp.rm(outPath, { recursive: true, force: true });
+    } else {
+      await fsp.rm(outPath, { force: true });
+    }
+  } catch (e: any) {
+    if (e?.code !== 'ENOENT') throw e;
+  }
+  
   const tmpPath = outPath + `.part-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   let crc = 0;
